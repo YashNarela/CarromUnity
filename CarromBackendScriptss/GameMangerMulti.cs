@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,32 +14,33 @@ public class GameManager : MonoBehaviour
 
     [Header("UI")]
     public Slider powerSlider;
-    public TextMeshProUGUI playerText, enemyText, turnText, updatesText;
+    public TextMeshProUGUI turnText, updatesText;
     public Button pauseButton;
     public Canvas canvas;
+
+    // Dynamic player UI
+    [Header("Dynamic Player UI")]
+    public Transform playerInfoParent; // Assign a parent object in Canvas to hold player info
+    public GameObject playerInfoPrefab; // A prefab with TextMeshProUGUI fields for name & score
 
     [Header("Visuals")]
     public Material myTurnMaterial, enemyTurnMaterial, defaultMaterial;
 
-    // Board and piece constants
     const float UNITY_SIZE = 11.7657f;
     const float BACKEND_SIZE = 600f;
     const float STRIKER_MIN_X = -12f;
     const float STRIKER_MAX_X = 12f;
     const float STRIKER_Y = -4.5f;
 
-    // Networking
     private ColyseusRoom<CarromGameState> room;
     private string mySessionId;
     private bool isMyTurn;
 
-    // Piece management
     private Dictionary<string, GameObject> pieces = new Dictionary<string, GameObject>();
     private GameObject striker;
     private StrikerController strikerController;
-
-    // For UI updates
     private Dictionary<string, Player> playersData = new Dictionary<string, Player>();
+    private Dictionary<string, GameObject> playerInfos = new Dictionary<string, GameObject>();
 
     void Start()
     {
@@ -55,7 +55,6 @@ public class GameManager : MonoBehaviour
     {
         if (pauseButton != null)
             pauseButton.onClick.AddListener(OnPauseClicked);
-
         if (powerSlider != null)
         {
             powerSlider.minValue = 5f;
@@ -87,14 +86,13 @@ public class GameManager : MonoBehaviour
         ClearAllPieces();
         pieces.Clear();
         playersData.Clear();
+        ClearPlayerInfos();
 
         foreach (string key in state.players.Keys)
         {
             playersData[key] = state.players[key];
-
-        
+            CreateOrUpdatePlayerInfo(key, state.players[key]);
         }
-
         foreach (string key in state.pieces.Keys)
         {
             var piece = state.pieces[key];
@@ -109,64 +107,12 @@ public class GameManager : MonoBehaviour
             var piece = state.pieces[key];
             CreateOrUpdatePiece(key, piece);
         }
-
         foreach (string key in state.players.Keys)
         {
             playersData[key] = state.players[key];
+            CreateOrUpdatePlayerInfo(key, state.players[key]);
         }
     }
-
-    //void CreateOrUpdatePiece(string key, CarromPiece piece)
-    //{
-    //    Vector3 pos = BackendToUnity(piece.x, piece.y);
-
-    //    GameObject prefab = null;
-    //    switch (piece.type)
-    //    {
-    //        case "striker": prefab = strikerPrefab; break;
-    //        case "white": prefab = whitePrefab; break;
-    //        case "black": prefab = blackPrefab; break;
-    //        case "queen": prefab = queenPrefab; break;
-    //    }
-
-    //    if (!pieces.ContainsKey(key))
-    //    {
-    //        // For striker, always spawn at (0, -4.5f, 0)
-    //        Vector3 spawnPos = piece.type == "striker" ? new Vector3(0f, -4.55f, 0f) : pos;
-
-    //        GameObject obj = Instantiate(prefab, spawnPos, Quaternion.identity);
-    //        obj.name = key;
-    //        pieces[key] = obj;
-
-    //        if (piece.type == "striker")
-    //        {
-    //            striker = obj;
-    //            strikerController = striker.GetComponent<StrikerController>();
-    //            if (strikerController == null)
-    //                strikerController = striker.AddComponent<StrikerController>();
-    //            strikerController.gameManager = this;
-    //            // No need to set position again, already spawned at correct spot!
-    //        }
-    //    }
-    //    else
-    //    {
-    //        // Only update position if NOT my turn, or if out of sync
-    //        if (piece.type == "striker" && strikerController != null)
-    //        {
-    //            if (!IsMyTurn() ||
-    //                Vector3.Distance(pieces[key].transform.position, pos) > 0.01f)
-    //            {
-    //                pieces[key].transform.position = pos;
-    //            }
-    //        }
-    //        else
-    //        {
-    //            pieces[key].transform.position = pos;
-    //        }
-    //    }
-
-    //    pieces[key].SetActive(!piece.isPocketed);
-    //}
 
     void CreateOrUpdatePiece(string key, CarromPiece piece)
     {
@@ -195,32 +141,26 @@ public class GameManager : MonoBehaviour
                 if (strikerController == null)
                     strikerController = striker.AddComponent<StrikerController>();
                 strikerController.gameManager = this;
-                // Always start at spawnPos
                 striker.transform.position = spawnPos;
             }
         }
         else
         {
-            // STRIKER: Only move from backend if NOT my turn or if pocketed
             if (piece.type == "striker" && strikerController != null)
             {
                 if (!IsMyTurn() || piece.isPocketed)
                 {
                     pieces[key].transform.position = pos;
                 }
-                // If it's my turn and striker is not pocketed, don't update position from backend!
             }
             else
             {
                 pieces[key].transform.position = pos;
             }
         }
-
         pieces[key].SetActive(!piece.isPocketed);
     }
 
-
-    // Now backend maps to X, Y (not Z)
     Vector3 BackendToUnity(float backendX, float backendY)
     {
         float unityX = (backendX / BACKEND_SIZE) * UNITY_SIZE - UNITY_SIZE / 2f;
@@ -262,18 +202,47 @@ public class GameManager : MonoBehaviour
         });
     }
 
+    // NEW: Dynamic player info UI
+    void CreateOrUpdatePlayerInfo(string sessionId, Player player)
+    {
+        GameObject infoObj;
+        if (!playerInfos.ContainsKey(sessionId))
+        {
+            infoObj = Instantiate(playerInfoPrefab, playerInfoParent);
+            playerInfos[sessionId] = infoObj;
+        }
+        else
+        {
+            infoObj = playerInfos[sessionId];
+        }
+        var texts = infoObj.GetComponentsInChildren<TextMeshProUGUI>();
+        if (texts.Length > 0)
+            texts[0].text = player.name ?? ("Player " + sessionId.Substring(0, 4));
+        if (texts.Length > 1)
+            texts[1].text = "Score: " + player.score;
+        // Highlight whose turn
+        infoObj.GetComponent<Image>().color = player.isActive ? Color.green : Color.white;
+    }
+
+    void ClearPlayerInfos()
+    {
+        foreach (var obj in playerInfos.Values)
+            Destroy(obj);
+        playerInfos.Clear();
+    }
+
     void UpdateUI(CarromGameState state)
     {
         isMyTurn = state.players.ContainsKey(mySessionId) && state.players[mySessionId].isActive;
         if (turnText != null)
         {
-            turnText.text = isMyTurn ? "Your Turn" : "Opponent's Turn";
+            var myPlayer = state.players[mySessionId];
+            turnText.text = "Turn: " + (myPlayer.isActive ? myPlayer.name : GetActivePlayerName(state));
             turnText.color = isMyTurn ? Color.green : Color.yellow;
         }
         if (powerSlider != null)
             powerSlider.gameObject.SetActive(isMyTurn);
 
-        // Show/hide striker slider and striker based on turn
         if (strikerController != null && strikerController.strikerSlider != null)
             strikerController.strikerSlider.gameObject.SetActive(isMyTurn);
         if (strikerController != null)
@@ -282,22 +251,24 @@ public class GameManager : MonoBehaviour
         if (strikerController != null)
             strikerController.enabled = isMyTurn;
 
-        foreach (var playerObj in state.players.Values)
-        {
-            Player player = playerObj as Player;
-            if (player == null) continue; // Defensive: skip if cast fails
-
-            if (player.sessionId == mySessionId && playerText != null)
-                playerText.text = $"Score: {player.score}";
-            else if (enemyText != null)
-                enemyText.text = $"Opponent Score: {player.score}";
-        }
+        // Update all player info
+        foreach (var sessionId in state.players.Keys)
+            CreateOrUpdatePlayerInfo(sessionId, state.players[sessionId]);
+        
         // Events
         if (state.events.Count > 0 && updatesText != null)
         {
             var evt = state.events[state.events.Count - 1];
             updatesText.text = evt.message ?? "";
         }
+    }
+
+    string GetActivePlayerName(CarromGameState state)
+    {
+        foreach (var player in state.players.Values)
+            if (player.isActive)
+                return player.name ?? "Unknown";
+        return "Unknown";
     }
 
     void OnPauseClicked()
@@ -320,5 +291,6 @@ public class GameManager : MonoBehaviour
         if (room != null)
             room.OnStateChange -= OnStateChange;
         ClearAllPieces();
+        ClearPlayerInfos();
     }
 }

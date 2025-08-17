@@ -8,16 +8,16 @@ public class StrikerController : MonoBehaviour
     public GameManager gameManager;
 
     [Header("UI & Visuals")]
-    public Slider strikerSlider;                 // Assign in Inspector
-    public Transform strikerForceField;          // Assign in Inspector
+    public Slider strikerSlider;                
+    public Transform strikerForceField;        
     public float maxForceMagnitude = 30f;
     public float maxScale = 1f;
 
     private Camera gameCamera;
     private bool isCharging = false;
     private Vector3 dragStartPos, dragEndPos;
-    private const float STRIKER_MIN_X = -3.4f;
-    private const float STRIKER_MAX_X = 3.4f;
+    private const float STRIKER_MIN_X = -12f; 
+    private const float STRIKER_MAX_X = 12f;
     private const float STRIKER_Y = -4.57f;
 
     void Start()
